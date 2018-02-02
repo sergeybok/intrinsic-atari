@@ -8,7 +8,6 @@ import pickle
 import time
 import datetime
 import sys
-import cv2
 from scipy import misc 
 
 import Perception
@@ -23,7 +22,7 @@ import gym
 
 
 use_intrinsic_reward = False
-use_complete_random_agent = True
+use_complete_random_agent = False
 historical_sample_size = 100
 
 
@@ -31,11 +30,12 @@ gym_environment_name = 'Breakout-v0'
 
 # ### Training the network
 # Setting all the training parameters
-batch_size = 100  # How many experiences to use for each training step.
+batch_size = 40  # How many experiences to use for each training step.
 gamma_discount_factor = .9999  # Discount factor on the target Q-values
 startE = 0.5  # Starting chance of random action
 endE = 0.05  # Final chance of random action
-annealing_steps = 7000  # How many steps of training to reduce startE to endE.
+#annealing_steps = 7000  # How many steps of training to reduce startE to endE.
+annealing_eps = 100
 batch_size_deconv_compressor = 4
 
 intrinsic_reward_rescaling_factor = 10
@@ -65,7 +65,7 @@ def rgb2gray(rgb):
 # ### Experience Replay
 # This class allows us to store experiences and sample then randomly to train the network.
 class experience_buffer():
-    def __init__(self, buffer_size=2000):
+    def __init__(self, buffer_size=4000):
         self.buffer = []
         self.buffer_size = buffer_size
 
@@ -129,7 +129,7 @@ myBuffer = experience_buffer()
 
 # Set the rate of random action decrease.
 e = startE
-stepDrop = float(startE - endE)/annealing_steps
+stepDrop = float(startE - endE)/annealing_eps
 
 # create lists to contain total rewards and steps per episode
 steps_taken_per_episode_list = []
@@ -254,48 +254,49 @@ for episode in range(num_episodes):
 
     obs_t = env.reset()
     obs_t = rgb2gray(obs_t) / 255.0
-    obs_t = obs_t.flatten()
+    
     done = False 
     episode_reward = 0
     obs_tm1 = np.zeros_like(obs_t)
     obs_tm2 = np.zeros_like(obs_t)
     obs_tm3 = np.zeros_like(obs_t)
+
+    steps = 0 
     while not done:
+        steps += 1
         env.render()
 	    # Action Choice
         if use_complete_random_agent:
             a = env.action_space.sample()
         elif use_intrinsic_reward:
-            a, = sess.run([mainQN.predict], feed_dict={mainQN.flattened_image: [np.array([obs_t,obs_tm1,obs_tm2,obs_tm3]).flatten()]})
+            a, = sess.run([mainQN.predict], feed_dict={mainQN.flattened_image: [np.stack([obs_t,obs_tm1,obs_tm2,obs_tm3],axis=2).flatten()]})
             #a = a[0]
 
         else:
             if(np.random.rand(1) < e or total_steps < pre_train_steps): # Choose an action by greedily (with e chance of random action) from the Q-network
                 a = env.action_space.sample()
             else:
-                a = sess.run(mainQN.predict, feed_dict={mainQN.flattened_image: [np.array([obs_t,obs_tm1,obs_tm2,obs_tm3]).flatten()]})[0]
+                a = sess.run(mainQN.predict, feed_dict={mainQN.flattened_image: [np.stack([obs_t,obs_tm1,obs_tm2,obs_tm3],axis=2).flatten()]})[0]
                 print(a)
         # take action, get next state
         obs_tp1, reward, done, info = env.step(a)
         obs_tp1 = rgb2gray(obs_tp1)/255.0
-        obs_tp1 = obs_tp1.flatten()
+        
         
         # save into buffer
-        episodeBuffer.add(np.reshape(np.array([np.array([obs_t,obs_tm1,obs_tm2,obs_tm3]).flatten(), a, reward, obs_tp1, done]), [1, 5]))
+        episodeBuffer.add(np.reshape(np.array([np.stack([obs_t,obs_tm1,obs_tm2,obs_tm3],axis=2).flatten(), a, reward, obs_tp1, done]), [1, 5]))
         episode_reward += reward
 
-        if total_steps > pre_train_steps:
-            # NOTE::: We are reducing the epsilon of exploration after every action we take, not after every episode, so the epsilon decreases within 1 episode
-            if e > endE:
-                e -= stepDrop
         obs_tm3 = obs_tm2
         obs_tm2 = obs_tm1
         obs_tm1 = obs_t
         obs_t = obs_tp1
 
 
-
-    print('Episode {0} with total reward {1}'.format(episode, episode_reward))
+    if e > endE:
+        # NOTE::: We are reducing the epsilon of exploration after every action we take, not after every episode, so the epsilon decreases within 1 episode
+        e -= stepDrop
+    print('Episode {0} with total reward {1} in {2} steps'.format(episode, episode_reward,steps))
     if use_intrinsic_reward and not myBuffer.is_empty():
         Compressor_n_batches = len(episodeBuffer.buffer)//batch_size_deconv_compressor
         avg_batch_compressor_loss = 0.0
@@ -333,14 +334,14 @@ for episode in range(num_episodes):
             avg_batch_intrinsic_reward += float(intrinsic_r)/Compressor_n_batches
         print('compressor loss {0}'.format(avg_batch_compressor_loss))
         summary_val_compressor_loss, = sess.run([avg_batch_compressor_loss_summary], feed_dict={avg_batch_compressor_loss_placeholder: avg_batch_compressor_loss})
-        writer_op_complete_Network.add_summary(summary_val_compressor_loss, episode_num + 1)
+        writer_op_complete_Network.add_summary(summary_val_compressor_loss, episode + 1)
         summary_val_intrinsic_reward, = sess.run([avg_batch_intrinsic_reward_summary], feed_dict={avg_batch_intrinsic_reward_placeholder: avg_batch_intrinsic_reward})
-        writer_op_complete_Network.add_summary(summary_val_intrinsic_reward, episode_num + 1)
+        writer_op_complete_Network.add_summary(summary_val_intrinsic_reward, episode + 1)
 
     if total_steps > pre_train_steps:
-        if (episode_num % (update_freq_per_episodes) == 0 and episode_num > 0):
+        if (episode % (update_freq_per_episodes) == 0 and episode > 0):
             avg_batch_DQN_loss = 0.0
-            Q_n_batches = 10
+            Q_n_batches = 20
             for batch_num in range(Q_n_batches):
                 trainBatch, actual_sampled_size = myBuffer.sample(batch_size)  # Get a random batch of experiences.
                 # Below we perform the Double-DQN update to the target Q-values
@@ -358,14 +359,14 @@ for episode in range(num_episodes):
                                                                                       feed_dict={mainQN.flattened_image: np.vstack(trainBatch[:, 0]), mainQN.targetQ: targetQ, mainQN.actions: trainBatch[:, 1]})
                 _ = sess.run(grouped_target_network_update_op)
                 avg_batch_DQN_loss += float(l)/Q_n_batches
-                writer_op_complete_Network.add_summary(summary_val_grad_mainQN, episode_num*Q_n_batches+batch_num+1)
-                writer_op_complete_Network.add_summary(summary_val_weights_mainQN, episode_num * Q_n_batches + batch_num + 1)
+                writer_op_complete_Network.add_summary(summary_val_grad_mainQN, episode*Q_n_batches+batch_num+1)
+                writer_op_complete_Network.add_summary(summary_val_weights_mainQN, episode * Q_n_batches + batch_num + 1)
             print('Qloss {0}'.format(avg_batch_DQN_loss))
             summary_val_DQN_loss, = sess.run([avg_batch_DQN_loss_summary], feed_dict={avg_batch_DQN_loss_placeholder: avg_batch_DQN_loss})
-            writer_op_complete_Network.add_summary(summary_val_DQN_loss, episode_num + 1)
+            writer_op_complete_Network.add_summary(summary_val_DQN_loss, episode + 1)
             summary_val_input_images, summary_val_cnn_merged = sess.run([input_frame_summary, cnn_merged_summaries], feed_dict={mainQN.flattened_image: np.vstack(trainBatch[:5, 3])})
-            writer_op_complete_Network.add_summary(summary_val_input_images, episode_num + 1)
-            writer_op_complete_Network.add_summary(summary_val_cnn_merged, episode_num + 1)
+            writer_op_complete_Network.add_summary(summary_val_input_images, episode + 1)
+            writer_op_complete_Network.add_summary(summary_val_cnn_merged, episode + 1)
 
     myBuffer.add(episodeBuffer.buffer)
 
@@ -384,7 +385,7 @@ end_episode_time = time.time()
 duration = end_episode_time-start_time
 duration = datetime.timedelta(seconds=duration)
 print('Total running time is {0}'.format(duration))
-saver.save(sess, path_Complete_Network + '/model-' + str(episode_num) + '.ckpt')
+saver.save(sess, path_Complete_Network + '/model-' + str(episode) + '.ckpt')
 writer_op_complete_Network.close()
 
 
