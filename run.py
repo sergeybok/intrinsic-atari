@@ -260,6 +260,7 @@ for episode in range(num_episodes):
     steps = 0 
     while not done:
         steps += 1
+        total_steps +=1
         #env.render()
 	    # Action Choice
         if use_complete_random_agent:
