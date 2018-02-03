@@ -39,17 +39,13 @@ annealing_eps = 100
 batch_size_deconv_compressor = 4
 
 intrinsic_reward_rescaling_factor = 10
-num_episodes = 1300  # How many episodes of game environment to train network with.
-if(use_complete_random_agent):
-    update_freq_per_episodes = num_episodes # How often to perform a training step.
-else:
-    update_freq_per_episodes = 25  # How often to perform a training step.
+num_episodes = 4000  # How many episodes of game environment to train network with.
+
 pre_train_steps = 100  # How many steps of random actions before training begins.
-max_actions_per_episode = 160  # The max allowed length of our episode.
 load_model = False  # Whether to load a saved model.
 path_Complete_Network = "./curiosity_model/intinsic_model"  # The path to save our model to.
 # path_Frame_Predictor = "./curiosity_model/frame_predictor_model"  # The path to save our model to.
-model_saving_freq = 200
+model_saving_freq = 1000
 # h_size = 512  # The size of the final convolutional layer before splitting it into Advantage and Value streams.
 tau = 0.001  # Rate to update target network toward primary network
 num_stacked_frames = 4
@@ -222,11 +218,11 @@ init_all_variables = tf.global_variables_initializer()
 sess = tf.Session()
 
 if use_intrinsic_reward:
-	tf_graph_file_name = './curiosity_model/tf_graphs/intrinsic_{0}'.format(str(datetime.datetime.now()).replace(' ','_'))
+	tf_graph_file_name = './curiosity_model/tf_graphs/intrinsic_{0}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
 elif use_complete_random_agent:
-	tf_graph_file_name = './curiosity_model/tf_graphs/random_{0}'.format(str(datetime.datetime.now()).replace(' ','_'))
+	tf_graph_file_name = './curiosity_model/tf_graphs/random_{0}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
 else: 
-	tf_graph_file_name = './curiosity_model/tf_graphs/egreedy_{0}'.format(str(datetime.datetime.now()).replace(' ','_'))
+	tf_graph_file_name = './curiosity_model/tf_graphs/egreedy_{0}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
 
 if not os.path.exists(tf_graph_file_name):
     os.makedirs(tf_graph_file_name)
@@ -264,7 +260,7 @@ for episode in range(num_episodes):
     steps = 0 
     while not done:
         steps += 1
-        env.render()
+        #env.render()
 	    # Action Choice
         if use_complete_random_agent:
             a = env.action_space.sample()
@@ -339,9 +335,9 @@ for episode in range(num_episodes):
         writer_op_complete_Network.add_summary(summary_val_intrinsic_reward, episode + 1)
 
     if total_steps > pre_train_steps:
-        if (episode % (update_freq_per_episodes) == 0 and episode > 0):
+        if (episode > 0):
             avg_batch_DQN_loss = 0.0
-            Q_n_batches = 20
+            Q_n_batches = 25
             for batch_num in range(Q_n_batches):
                 trainBatch, actual_sampled_size = myBuffer.sample(batch_size)  # Get a random batch of experiences.
                 # Below we perform the Double-DQN update to the target Q-values
@@ -395,26 +391,17 @@ print('Mean reward is '+str(rMean))
 
 
 if use_intrinsic_reward:
-	results_file_name = './curiosity_model/intrinsic_{0}_results.pkl'.format(str(datetime.datetime.now()).replace(' ','_'))
+	results_file_name = './curiosity_model/intrinsic_{0}_results.pkl'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
 elif use_complete_random_agent:
 	results_file_name = './curiosity_model/random_resutls.pkl'
 else:
-	results_file_name = './curiosity_model/egreedy_{0}_results.pkl'.format(str(datetime.datetime.now()).replace(' ','_'))
+	results_file_name = './curiosity_model/egreedy_{0}_results.pkl'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
 fp = open(results_file_name, 'wb')
-results_dict = {'reward_per_episode_list':reward_per_episode_list, 'mean_reward_per_episode_window_list':mean_reward_per_episode_window_list, 'steps_taken_per_episode_list':steps_taken_per_episode_list}
+results_dict = {'reward_per_episode_list':reward_per_episode_list}
 pickle.dump(results_dict, fp)
 fp.close()
 
 plt.plot(reward_per_episode_list)
-
-
-
-
-
-
-
-
-
 
 
 
