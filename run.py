@@ -2,19 +2,21 @@ import tensorflow as tf
 import tensorflow.contrib.slim as slim
 import numpy as np
 import random
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import os
 import pickle
 import time
 import datetime
 import sys
-from scipy import misc 
+#from scipy import misc 
 
 import Perception
 import Reward
 import DQN 
 
 import gym 
+
+import threading 
 
 
 
@@ -30,7 +32,7 @@ gym_environment_name = 'Breakout-v0'
 
 # ### Training the network
 # Setting all the training parameters
-batch_size = 40  # How many experiences to use for each training step.
+batch_size = 50  # How many experiences to use for each training step.
 gamma_discount_factor = .9999  # Discount factor on the target Q-values
 startE = 0.5  # Starting chance of random action
 endE = 0.05  # Final chance of random action
@@ -39,7 +41,7 @@ annealing_eps = 100
 batch_size_deconv_compressor = 4
 
 intrinsic_reward_rescaling_factor = 10
-num_episodes = 4000  # How many episodes of game environment to train network with.
+num_episodes = 100  # How many episodes of game environment to train network with.
 
 pre_train_steps = 100  # How many steps of random actions before training begins.
 load_model = False  # Whether to load a saved model.
@@ -80,6 +82,40 @@ class experience_buffer():
         return len(self.buffer) == 0
 
 
+def train_network():
+    avg_batch_DQN_loss = 0.0
+    batch_num = 0
+    while not DONE:
+        with my_buffer_lock:
+            trainBatch, actual_sampled_size = myBuffer.sample(batch_size)  # Get a random batch of experiences.
+        
+        # Below we perform the Double-DQN update to the target Q-values
+        Q1 = sess.run(mainQN.predict, feed_dict={mainQN.flattened_image: np.vstack(trainBatch[:, 3])})
+        with target_network_lock:
+            Q2 = sess.run(targetQN.Qout, feed_dict={targetQN.flattened_image: np.vstack(trainBatch[:, 3])})
+        # NOTE ::: the use of end_multiplier --- the is_terminal_flag gets stored as 1 or 0(True or False),
+        # NOTE ::: Done if the is_terminal_flag is true i.e 1, we define the end_multiplier as 0, if the is_terminal_flag is false i.e 0, we define the end_multiplier as 1
+        end_multiplier = -(trainBatch[:, 4] - 1)
+        doubleQ = Q2[range(actual_sampled_size), Q1]
+        targetQ = trainBatch[:, 2] + (gamma_discount_factor * doubleQ * end_multiplier)
+        # Update the network with our target values.
+        # NOTE ::: it is important to recalculate the Q values of the states in the experience replay and then get the gradient w.r.t difference b/w recalculated values and targets
+        # NOTE ::: otherwise it defeats the purpose of experience replay, also we are not storing the Q values for this reason
+        _,_,l, summary_val_grad_mainQN, summary_val_weights_mainQN = sess.run([mainQN.train_Q_op,mainQN.train_cnn_op,mainQN.loss, merged_grad_mainQN_summary, merged_weights_mainQN_summary],
+                                                                              feed_dict={mainQN.flattened_image: np.vstack(trainBatch[:, 0]), mainQN.targetQ: targetQ, mainQN.actions: trainBatch[:, 1]})
+        #_ = sess.run(grouped_target_network_update_op)
+        avg_batch_DQN_loss = avg_batch_DQN_loss*0.9 + l*0.1
+        writer_op_complete_Network.add_summary(summary_val_grad_mainQN, batch_num+1)
+        writer_op_complete_Network.add_summary(summary_val_weights_mainQN, batch_num + 1)
+        print('\tQloss {0}'.format(avg_batch_DQN_loss))
+        summary_val_DQN_loss, = sess.run([avg_batch_DQN_loss_summary], feed_dict={avg_batch_DQN_loss_placeholder: avg_batch_DQN_loss})
+        writer_op_complete_Network.add_summary(summary_val_DQN_loss, batch_num + 1)
+        #summary_val_input_images, summary_val_cnn_merged = sess.run([input_frame_summary, cnn_merged_summaries], feed_dict={mainQN.flattened_image: np.vstack(trainBatch[:5, 3])})
+        #writer_op_complete_Network.add_summary(summary_val_input_images, episode + 1)
+        #writer_op_complete_Network.add_summary(summary_val_cnn_merged, episode + 1)
+    with target_network_lock:
+        _ = sess.run(grouped_target_network_update_op)
+
 print('building environment {0}..'.format(gym_environment_name))
 
 env = gym.make(gym_environment_name)
@@ -103,6 +139,7 @@ with tf.variable_scope("Q_target") as Q_target_scope:
     targetQN = DQN.Qnetwork(frame_height=frame_height, frame_width=frame_width, frame_channels=frame_channels, 
     					num_stacked_frames=num_stacked_frames, total_num_actions=total_num_actions)
 
+target_network_lock = threading.Lock()
 
 
 saver = tf.train.Saver()
@@ -122,6 +159,7 @@ if use_intrinsic_reward:
 
 
 myBuffer = experience_buffer()
+my_buffer_lock = threading.Lock()
 
 # Set the rate of random action decrease.
 e = startE
@@ -245,6 +283,12 @@ print('running for {0} episodes'.format(num_episodes))
 
 #max_steps = 100 # Not really sure if there should be max
 
+global DONE 
+
+DONE = False 
+
+train_thread = threading.Thread(target=train_network)
+
 for episode in range(num_episodes):
     episodeBuffer = experience_buffer()
 
@@ -274,14 +318,15 @@ for episode in range(num_episodes):
                 a = env.action_space.sample()
             else:
                 a = sess.run(mainQN.predict, feed_dict={mainQN.flattened_image: [np.stack([obs_t,obs_tm1,obs_tm2,obs_tm3],axis=2).flatten()]})[0]
-                print(a)
         # take action, get next state
         obs_tp1, reward, done, info = env.step(a)
         obs_tp1 = rgb2gray(obs_tp1)/255.0
         
         
         # save into buffer
-        episodeBuffer.add(np.reshape(np.array([np.stack([obs_t,obs_tm1,obs_tm2,obs_tm3],axis=2).flatten(), a, reward, obs_tp1, done]), [1, 5]))
+        #temp = np.stack([obs_t,obs_tm1,obs_tm2,obs_tm3],axis=2).flatten()
+        #print(temp.shape)
+        episodeBuffer.add(np.reshape(np.array([(np.stack([obs_t,obs_tm1,obs_tm2,obs_tm3],axis=2).flatten()), a, reward, (np.stack([obs_tp1,obs_t,obs_tm1,obs_tm2],axis=2).flatten()), done]), [1, 5]))
         episode_reward += reward
 
         obs_tm3 = obs_tm2
@@ -329,54 +374,34 @@ for episode in range(num_episodes):
             #print('intrinsic Reward {0}'.format(intrinsic_r))
             avg_batch_compressor_loss += float(l)/Compressor_n_batches
             avg_batch_intrinsic_reward += float(intrinsic_r)/Compressor_n_batches
-        print('compressor loss {0}'.format(avg_batch_compressor_loss))
+        print('\tcompressor loss {0}'.format(avg_batch_compressor_loss))
         summary_val_compressor_loss, = sess.run([avg_batch_compressor_loss_summary], feed_dict={avg_batch_compressor_loss_placeholder: avg_batch_compressor_loss})
         writer_op_complete_Network.add_summary(summary_val_compressor_loss, episode + 1)
         summary_val_intrinsic_reward, = sess.run([avg_batch_intrinsic_reward_summary], feed_dict={avg_batch_intrinsic_reward_placeholder: avg_batch_intrinsic_reward})
         writer_op_complete_Network.add_summary(summary_val_intrinsic_reward, episode + 1)
+ 
+    with my_buffer_lock:
+        myBuffer.add(episodeBuffer.buffer)
 
-    if total_steps > pre_train_steps:
-        if (episode > 0):
-            avg_batch_DQN_loss = 0.0
-            Q_n_batches = 25
-            for batch_num in range(Q_n_batches):
-                trainBatch, actual_sampled_size = myBuffer.sample(batch_size)  # Get a random batch of experiences.
-                # Below we perform the Double-DQN update to the target Q-values
-                Q1 = sess.run(mainQN.predict, feed_dict={mainQN.flattened_image: np.vstack(trainBatch[:, 3])})
-                Q2 = sess.run(targetQN.Qout, feed_dict={targetQN.flattened_image: np.vstack(trainBatch[:, 3])})
-                # NOTE ::: the use of end_multiplier --- the is_terminal_flag gets stored as 1 or 0(True or False),
-                # NOTE ::: Done if the is_terminal_flag is true i.e 1, we define the end_multiplier as 0, if the is_terminal_flag is false i.e 0, we define the end_multiplier as 1
-                end_multiplier = -(trainBatch[:, 4] - 1)
-                doubleQ = Q2[range(actual_sampled_size), Q1]
-                targetQ = trainBatch[:, 2] + (gamma_discount_factor * doubleQ * end_multiplier)
-                # Update the network with our target values.
-                # NOTE ::: it is important to recalculate the Q values of the states in the experience replay and then get the gradient w.r.t difference b/w recalculated values and targets
-                # NOTE ::: otherwise it defeats the purpose of experience replay, also we are not storing the Q values for this reason
-                _,_,l, summary_val_grad_mainQN, summary_val_weights_mainQN = sess.run([mainQN.train_Q_op,mainQN.train_cnn_op,mainQN.loss, merged_grad_mainQN_summary, merged_weights_mainQN_summary],
-                                                                                      feed_dict={mainQN.flattened_image: np.vstack(trainBatch[:, 0]), mainQN.targetQ: targetQ, mainQN.actions: trainBatch[:, 1]})
-                _ = sess.run(grouped_target_network_update_op)
-                avg_batch_DQN_loss += float(l)/Q_n_batches
-                writer_op_complete_Network.add_summary(summary_val_grad_mainQN, episode*Q_n_batches+batch_num+1)
-                writer_op_complete_Network.add_summary(summary_val_weights_mainQN, episode * Q_n_batches + batch_num + 1)
-            print('Qloss {0}'.format(avg_batch_DQN_loss))
-            summary_val_DQN_loss, = sess.run([avg_batch_DQN_loss_summary], feed_dict={avg_batch_DQN_loss_placeholder: avg_batch_DQN_loss})
-            writer_op_complete_Network.add_summary(summary_val_DQN_loss, episode + 1)
-            summary_val_input_images, summary_val_cnn_merged = sess.run([input_frame_summary, cnn_merged_summaries], feed_dict={mainQN.flattened_image: np.vstack(trainBatch[:5, 3])})
-            writer_op_complete_Network.add_summary(summary_val_input_images, episode + 1)
-            writer_op_complete_Network.add_summary(summary_val_cnn_merged, episode + 1)
-
-    myBuffer.add(episodeBuffer.buffer)
+    if episode == 1:
+        train_thread.start()
 
     summary_val_curr_episode_reward, = sess.run([curr_episode_reward_summary], feed_dict={curr_episode_total_reward_placeholder: episode_reward})
     writer_op_complete_Network.add_summary(summary_val_curr_episode_reward, episode + 1)
     reward_per_episode_list.append(episode_reward)
+
+    with target_network_lock:
+        _ = sess.run(grouped_target_network_update_op)
     
     # Periodically save the model.
     if(episode % model_saving_freq == 0 and episode>0):
         saver.save(sess, path_Complete_Network + '/model-' + str(episode) + '.ckpt')
-        print("Saved Model after episode : "+str(episode))
+        print("\tSaved Model after episode : "+str(episode))
         
 
+DONE = True
+
+train_thread.join()
 
 end_episode_time = time.time()
 duration = end_episode_time-start_time
