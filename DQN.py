@@ -2,9 +2,7 @@ import tensorflow as tf
 import tensorflow.contrib.slim as slim
 import numpy as np
 import random
-import matplotlib.pyplot as plt
 import os
-import pickle
 
 
 import Perception
@@ -115,7 +113,7 @@ QNetwork_graph = tf.Graph()
 
 
 
-frame_height = 
+frame_height =
 frame_width = maze_env.video_width
 frame_channels = maze_env.video_channels
 
@@ -136,7 +134,7 @@ grouped_target_network_update_op = target_network_update_op(Q_main_variables, Q_
 
 
 if use_intrinsic_reward:
-    curiosity = Reward.Compressor(frame_height=frame_height, frame_width=frame_width, frame_channels=frame_channels, 
+    curiosity = Reward.Compressor(frame_height=frame_height, frame_width=frame_width, frame_channels=frame_channels,
                             state_feature_size=mainQN.state_feature_vector.shape[1].value, CNN_W=mainQN.CNN_params,
                             total_num_actions=total_num_actions, network_name='compressor')
 
@@ -323,7 +321,7 @@ for episode_num in range(num_episodes):
             intrinsic_r = curiosity.get_reward(predictions_t=pred_t,predictions_tm1=pred_tm1,targets=state_tp1)
             intrinsic_r = intrinsic_r * intrinsic_reward_rescaling_factor
 
-            # save samples 
+            # save samples
             for i in range(10):
                 cur_img = pred_t[i]
                 #cv2.imwrite(('frames/deconv_{0}.png'.format(i)),cur_img.reshape(84,84,3)*255)

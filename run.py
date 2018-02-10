@@ -85,36 +85,40 @@ class experience_buffer():
 def train_network():
     avg_batch_DQN_loss = 0.0
     batch_num = 0
-    while not DONE:
-        with my_buffer_lock:
-            trainBatch, actual_sampled_size = myBuffer.sample(batch_size)  # Get a random batch of experiences.
+    with tf.device('/cpu:1'):
+        while not DONE:
+            batch_num += 1
+            with my_buffer_lock:
+                trainBatch, actual_sampled_size = myBuffer.sample(batch_size)  # Get a random batch of experiences.
         
-        # Below we perform the Double-DQN update to the target Q-values
-        Q1 = sess.run(mainQN.predict, feed_dict={mainQN.flattened_image: np.vstack(trainBatch[:, 3])})
+            # Below we perform the Double-DQN update to the target Q-values
+            Q1 = sess.run(mainQN.predict, feed_dict={mainQN.flattened_image: np.vstack(trainBatch[:, 3])})
+            with target_network_lock:
+                Q2 = sess.run(targetQN.Qout, feed_dict={targetQN.flattened_image: np.vstack(trainBatch[:, 3])})
+            # NOTE ::: the use of end_multiplier --- the is_terminal_flag gets stored as 1 or 0(True or False),
+            # NOTE ::: Done if the is_terminal_flag is true i.e 1, we define the end_multiplier as 0, if the is_terminal_flag is false i.e 0, we define the end_multiplier as 1
+            end_multiplier = -(trainBatch[:, 4] - 1)
+            doubleQ = Q2[range(actual_sampled_size), Q1]
+            targetQ = trainBatch[:, 2] + (gamma_discount_factor * doubleQ * end_multiplier)
+            # Update the network with our target values.
+            # NOTE ::: it is important to recalculate the Q values of the states in the experience replay and then get the gradient w.r.t difference b/w recalculated values and targets
+            # NOTE ::: otherwise it defeats the purpose of experience replay, also we are not storing the Q values for this reason
+            _,_,l, summary_val_grad_mainQN, summary_val_weights_mainQN = sess.run([mainQN.train_Q_op,mainQN.train_cnn_op,mainQN.loss, merged_grad_mainQN_summary, merged_weights_mainQN_summary],
+                                                                                  feed_dict={mainQN.flattened_image: np.vstack(trainBatch[:, 0]), mainQN.targetQ: targetQ, mainQN.actions: trainBatch[:, 1]})
+            #_ = sess.run(grouped_target_network_update_op)
+            avg_batch_DQN_loss = avg_batch_DQN_loss*0.9 + l*0.1
+            writer_op_complete_Network.add_summary(summary_val_grad_mainQN, batch_num+1)
+            writer_op_complete_Network.add_summary(summary_val_weights_mainQN, batch_num + 1)
+            if batch_num == 10:
+                batch_num = 0
+                print('\tQloss {0}'.format(avg_batch_DQN_loss))
+            summary_val_DQN_loss, = sess.run([avg_batch_DQN_loss_summary], feed_dict={avg_batch_DQN_loss_placeholder: avg_batch_DQN_loss})
+            writer_op_complete_Network.add_summary(summary_val_DQN_loss, batch_num + 1)
+            #summary_val_input_images, summary_val_cnn_merged = sess.run([input_frame_summary, cnn_merged_summaries], feed_dict={mainQN.flattened_image: np.vstack(trainBatch[:5, 3])})
+            #writer_op_complete_Network.add_summary(summary_val_input_images, episode + 1)
+            #writer_op_complete_Network.add_summary(summary_val_cnn_merged, episode + 1)
         with target_network_lock:
-            Q2 = sess.run(targetQN.Qout, feed_dict={targetQN.flattened_image: np.vstack(trainBatch[:, 3])})
-        # NOTE ::: the use of end_multiplier --- the is_terminal_flag gets stored as 1 or 0(True or False),
-        # NOTE ::: Done if the is_terminal_flag is true i.e 1, we define the end_multiplier as 0, if the is_terminal_flag is false i.e 0, we define the end_multiplier as 1
-        end_multiplier = -(trainBatch[:, 4] - 1)
-        doubleQ = Q2[range(actual_sampled_size), Q1]
-        targetQ = trainBatch[:, 2] + (gamma_discount_factor * doubleQ * end_multiplier)
-        # Update the network with our target values.
-        # NOTE ::: it is important to recalculate the Q values of the states in the experience replay and then get the gradient w.r.t difference b/w recalculated values and targets
-        # NOTE ::: otherwise it defeats the purpose of experience replay, also we are not storing the Q values for this reason
-        _,_,l, summary_val_grad_mainQN, summary_val_weights_mainQN = sess.run([mainQN.train_Q_op,mainQN.train_cnn_op,mainQN.loss, merged_grad_mainQN_summary, merged_weights_mainQN_summary],
-                                                                              feed_dict={mainQN.flattened_image: np.vstack(trainBatch[:, 0]), mainQN.targetQ: targetQ, mainQN.actions: trainBatch[:, 1]})
-        #_ = sess.run(grouped_target_network_update_op)
-        avg_batch_DQN_loss = avg_batch_DQN_loss*0.9 + l*0.1
-        writer_op_complete_Network.add_summary(summary_val_grad_mainQN, batch_num+1)
-        writer_op_complete_Network.add_summary(summary_val_weights_mainQN, batch_num + 1)
-        print('\tQloss {0}'.format(avg_batch_DQN_loss))
-        summary_val_DQN_loss, = sess.run([avg_batch_DQN_loss_summary], feed_dict={avg_batch_DQN_loss_placeholder: avg_batch_DQN_loss})
-        writer_op_complete_Network.add_summary(summary_val_DQN_loss, batch_num + 1)
-        #summary_val_input_images, summary_val_cnn_merged = sess.run([input_frame_summary, cnn_merged_summaries], feed_dict={mainQN.flattened_image: np.vstack(trainBatch[:5, 3])})
-        #writer_op_complete_Network.add_summary(summary_val_input_images, episode + 1)
-        #writer_op_complete_Network.add_summary(summary_val_cnn_merged, episode + 1)
-    with target_network_lock:
-        _ = sess.run(grouped_target_network_update_op)
+            _ = sess.run(grouped_target_network_update_op)
 
 print('building environment {0}..'.format(gym_environment_name))
 
@@ -301,38 +305,39 @@ for episode in range(num_episodes):
     obs_tm2 = np.zeros_like(obs_t)
     obs_tm3 = np.zeros_like(obs_t)
 
-    steps = 0 
-    while not done:
-        steps += 1
-        total_steps +=1
-        #env.render()
-	    # Action Choice
-        if use_complete_random_agent:
-            a = env.action_space.sample()
-        elif use_intrinsic_reward:
-            a, = sess.run([mainQN.predict], feed_dict={mainQN.flattened_image: [np.stack([obs_t,obs_tm1,obs_tm2,obs_tm3],axis=2).flatten()]})
-            #a = a[0]
-
-        else:
-            if(np.random.rand(1) < e or total_steps < pre_train_steps): # Choose an action by greedily (with e chance of random action) from the Q-network
+    steps = 0
+    with tf.device('/cpu:0'):
+        while not done:
+            steps += 1
+            total_steps +=1
+            #env.render()
+    	    # Action Choice
+            if use_complete_random_agent:
                 a = env.action_space.sample()
-            else:
-                a = sess.run(mainQN.predict, feed_dict={mainQN.flattened_image: [np.stack([obs_t,obs_tm1,obs_tm2,obs_tm3],axis=2).flatten()]})[0]
-        # take action, get next state
-        obs_tp1, reward, done, info = env.step(a)
-        obs_tp1 = rgb2gray(obs_tp1)/255.0
-        
-        
-        # save into buffer
-        #temp = np.stack([obs_t,obs_tm1,obs_tm2,obs_tm3],axis=2).flatten()
-        #print(temp.shape)
-        episodeBuffer.add(np.reshape(np.array([(np.stack([obs_t,obs_tm1,obs_tm2,obs_tm3],axis=2).flatten()), a, reward, (np.stack([obs_tp1,obs_t,obs_tm1,obs_tm2],axis=2).flatten()), done]), [1, 5]))
-        episode_reward += reward
+            elif use_intrinsic_reward:
+                a, = sess.run([mainQN.predict], feed_dict={mainQN.flattened_image: [np.stack([obs_t,obs_tm1,obs_tm2,obs_tm3],axis=2).flatten()]})
+                #a = a[0]    
 
-        obs_tm3 = obs_tm2
-        obs_tm2 = obs_tm1
-        obs_tm1 = obs_t
-        obs_t = obs_tp1
+            else:
+                if(np.random.rand(1) < e or total_steps < pre_train_steps): # Choose an action by greedily (with e chance of random action) from the Q-network
+                    a = env.action_space.sample()
+                else:
+                    a = sess.run(mainQN.predict, feed_dict={mainQN.flattened_image: [np.stack([obs_t,obs_tm1,obs_tm2,obs_tm3],axis=2).flatten()]})[0]
+            # take action, get next state
+            obs_tp1, reward, done, info = env.step(a)
+            obs_tp1 = rgb2gray(obs_tp1)/255.0
+            
+            
+            # save into buffer
+            #temp = np.stack([obs_t,obs_tm1,obs_tm2,obs_tm3],axis=2).flatten()
+            #print(temp.shape)
+            episodeBuffer.add(np.reshape(np.array([(np.stack([obs_t,obs_tm1,obs_tm2,obs_tm3],axis=2).flatten()), a, reward, (np.stack([obs_tp1,obs_t,obs_tm1,obs_tm2],axis=2).flatten()), done]), [1, 5]))
+            episode_reward += reward    
+
+            obs_tm3 = obs_tm2
+            obs_tm2 = obs_tm1
+            obs_tm1 = obs_t
+            obs_t = obs_tp1
 
 
     if e > endE:
