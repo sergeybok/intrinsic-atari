@@ -44,8 +44,9 @@ intrinsic_reward_rescaling_factor = 10
 num_episodes = 100  # How many episodes of game environment to train network with.
 
 pre_train_steps = 100  # How many steps of random actions before training begins.
-load_model = False  # Whether to load a saved model.
+load_model = True  # Whether to load a saved model.
 path_Complete_Network = "./curiosity_model/intinsic_model"  # The path to save our model to.
+load_model_filename = "./extmodels/model-17000.ckpt"
 # path_Frame_Predictor = "./curiosity_model/frame_predictor_model"  # The path to save our model to.
 model_saving_freq = 1000
 # h_size = 512  # The size of the final convolutional layer before splitting it into Advantage and Value streams.
@@ -274,9 +275,10 @@ sess.run(init_all_variables)
 
 curr_episode_total_reward_summary = tf.Summary()
 if load_model == True:
-    print('Loading Model...')
-    ckpt_complete_Network = tf.train.get_checkpoint_state(path_Complete_Network)
-    saver.restore(sess, ckpt_complete_Network.model_checkpoint_path)
+    print('Loading Model {0}'.format(load_model_filename))
+    #ckpt_complete_Network = tf.train.get_checkpoint_state(path_Complete_Network)
+    #saver.restore(sess, ckpt_complete_Network.model_checkpoint_path)
+    saver.restore(sess, load_model_filename)
 
 start_time = time.time()
 
