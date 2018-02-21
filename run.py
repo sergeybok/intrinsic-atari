@@ -2,13 +2,13 @@ import tensorflow as tf
 import tensorflow.contrib.slim as slim
 import numpy as np
 import random
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 import os
 import pickle
 import time
 import datetime
 import sys
-#from scipy import misc 
+from scipy import misc 
 
 import Perception
 import Reward
@@ -37,16 +37,16 @@ gamma_discount_factor = .9999  # Discount factor on the target Q-values
 startE = 0.5  # Starting chance of random action
 endE = 0.05  # Final chance of random action
 #annealing_steps = 7000  # How many steps of training to reduce startE to endE.
-annealing_eps = 100
+annealing_eps = 900
 batch_size_deconv_compressor = 4
 
 intrinsic_reward_rescaling_factor = 10
-num_episodes = 100  # How many episodes of game environment to train network with.
+num_episodes = 10001  # How many episodes of game environment to train network with.
 
 pre_train_steps = 100  # How many steps of random actions before training begins.
 load_model = True  # Whether to load a saved model.
 path_Complete_Network = "./curiosity_model/intinsic_model"  # The path to save our model to.
-load_model_filename = "./extmodels/model-17000.ckpt"
+load_model_filename = "./curiosity_model/intinsic_model/model-1000.ckpt"
 # path_Frame_Predictor = "./curiosity_model/frame_predictor_model"  # The path to save our model to.
 model_saving_freq = 1000
 # h_size = 512  # The size of the final convolutional layer before splitting it into Advantage and Value streams.
@@ -59,12 +59,13 @@ state_frame_normalization_factor = 255.0
 
 
 def rgb2gray(rgb):
-    return np.dot(rgb[...,:3], [0.299, 0.587, 0.114])
+    gray = np.dot(rgb[...,:3], [0.299, 0.587, 0.114])
+    return misc.imresize(gray,(100,80))
 
 # ### Experience Replay
 # This class allows us to store experiences and sample then randomly to train the network.
 class experience_buffer():
-    def __init__(self, buffer_size=4000):
+    def __init__(self, buffer_size=8000):
         self.buffer = []
         self.buffer_size = buffer_size
 
@@ -125,8 +126,10 @@ print('building environment {0}..'.format(gym_environment_name))
 
 env = gym.make(gym_environment_name)
 
-frame_height = env.observation_space.shape[0]
-frame_width = env.observation_space.shape[1]
+#frame_height = env.observation_space.shape[0]
+#frame_width = env.observation_space.shape[1]
+frame_height = 100 
+frame_width = 80
 
 frame_channels = 1 # Need to hardcode grayscale
 

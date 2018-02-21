@@ -28,47 +28,47 @@ def CNN(input, height, width,in_channel, out_channel,afn=tf.nn.elu,weights=[]):
 	# filter [filter ht, filter wd, inchannels, outchannels]
 	if len(weights) == 0:
 		xavier_init = tf.contrib.layers.xavier_initializer(seed=seed+1)
-		conv1_weights = tf.Variable(xavier_init([8,8,in_channel,64]), name='CNN_1_Weights')
+		conv1_weights = tf.Variable(xavier_init([8,8,in_channel,16]), name='CNN_1_Weights')
 		weights.append(conv1_weights)
-		conv1_bias = tf.Variable(tf.constant(0.01, shape=[64]), name='CNN_1_Bias')
+		conv1_bias = tf.Variable(tf.constant(0.01, shape=[16]), name='CNN_1_Bias')
 		weights.append(conv1_bias)
 		xavier_init = tf.contrib.layers.xavier_initializer(seed=seed+2)
-		conv2_weights = tf.Variable(xavier_init([6,6,64,64]), name='CNN_2_Weights')
+		conv2_weights = tf.Variable(xavier_init([6,6,16,32]), name='CNN_2_Weights')
 		weights.append(conv2_weights)
-		conv2_bias = tf.Variable(tf.constant(0.01, shape=[64]), name='CNN_2_Bias')
+		conv2_bias = tf.Variable(tf.constant(0.01, shape=[32]), name='CNN_2_Bias')
 		weights.append(conv2_bias)
-		xavier_init = tf.contrib.layers.xavier_initializer(seed=seed+3)
-		conv3_weights = tf.Variable(xavier_init([5,5,64,128]), name='CNN_3_Weights')
-		weights.append(conv3_weights)
-		conv3_bias = tf.Variable(tf.constant(0.01, shape=[128]), name='CNN_3_Bias')
-		weights.append(conv3_bias)
-		xavier_init = tf.contrib.layers.xavier_initializer(seed=seed+4)
-		conv4_weights = tf.Variable(xavier_init([3,3,128,out_channel]), name='CNN_4_Weights')
-		weights.append(conv4_weights)
-		conv4_bias = tf.Variable(tf.constant(0.01, shape=[out_channel]), name='CNN_4_Bias')
-		weights.append(conv4_bias)
+		#xavier_init = tf.contrib.layers.xavier_initializer(seed=seed+3)
+		#conv3_weights = tf.Variable(xavier_init([5,5,64,128]), name='CNN_3_Weights')
+		#weights.append(conv3_weights)
+		#conv3_bias = tf.Variable(tf.constant(0.01, shape=[128]), name='CNN_3_Bias')
+		#weights.append(conv3_bias)
+		#xavier_init = tf.contrib.layers.xavier_initializer(seed=seed+4)
+		#conv4_weights = tf.Variable(xavier_init([3,3,128,out_channel]), name='CNN_4_Weights')
+		#weights.append(conv4_weights)
+		#conv4_bias = tf.Variable(tf.constant(0.01, shape=[out_channel]), name='CNN_4_Bias')
+		#weights.append(conv4_bias)
 
 	conv1 = afn(tf.nn.conv2d(input=img,filter=weights[0],strides=[1,5,4,1],padding='VALID',name='cnn1')+weights[1])
 	conv2 = afn(tf.nn.conv2d(input=conv1,filter=weights[2],strides=[1,3,3,1],padding='VALID',name='cnn2')+weights[3])
-	conv3 = afn(tf.nn.conv2d(input=conv2,filter=weights[4],strides=[1,2,2,1],padding='VALID',name='cnn3')+weights[5])
-	conv4 = afn(tf.nn.conv2d(input=conv3,filter=weights[6],strides=[1,1,1,1],padding='VALID',name='cnn4')+weights[7])
+	#conv3 = afn(tf.nn.conv2d(input=conv2,filter=weights[4],strides=[1,2,2,1],padding='VALID',name='cnn3')+weights[5])
+	#conv4 = afn(tf.nn.conv2d(input=conv3,filter=weights[6],strides=[1,1,1,1],padding='VALID',name='cnn4')+weights[7])
 
 
 	#batch, in_height, in_width, in_channels
-	global conv4_shape_1 
-	global conv4_shape_2 
-	global conv4_shape_3  
-	conv4_shape_1 = conv4.shape[1].value
-	conv4_shape_2 = conv4.shape[2].value
-	conv4_shape_3 = conv4.shape[3].value
+	#global conv4_shape_1 
+	#global conv4_shape_2 
+	#global conv4_shape_3  
+	#conv4_shape_1 = conv4.shape[1].value
+	#conv4_shape_2 = conv4.shape[2].value
+	#conv4_shape_3 = conv4.shape[3].value
 	
 
-	global conv3_shape_1 
-	global conv3_shape_2 
-	global conv3_shape_3  
-	conv3_shape_1 = conv3.shape[1].value
-	conv3_shape_2 = conv3.shape[2].value
-	conv3_shape_3 = conv3.shape[3].value
+	#global conv3_shape_1 
+	#global conv3_shape_2 
+	#global conv3_shape_3  
+	#conv3_shape_1 = conv3.shape[1].value
+	#conv3_shape_2 = conv3.shape[2].value
+	#conv3_shape_3 = conv3.shape[3].value
 	
 	global conv2_shape_1 
 	global conv2_shape_2 
@@ -89,7 +89,7 @@ def CNN(input, height, width,in_channel, out_channel,afn=tf.nn.elu,weights=[]):
 	#					kernel_size=[7,7],stride=[1,1],
 	#					padding='VALID',scope=("CNN_4"))
 
-	return tf.contrib.layers.flatten(conv4), weights
+	return tf.contrib.layers.flatten(conv2), weights
 	#return conv3
 
 
@@ -97,26 +97,26 @@ def Deconv(input, height, width,network_name,in_channel=None,out_channel = None,
 
 	#print('1 {0} \n 2 {1} \n 3 {2}'.format(conv4_shape_1,conv4_shape_2,conv4_shape_3))
 
-	img = tf.reshape(input,shape=[-1,conv4_shape_1,conv4_shape_2,conv4_shape_3]) 
+	img = tf.reshape(input,shape=[-1,conv2_shape_1,conv2_shape_2,conv2_shape_3]) 
 	# This depends on the cnn output before flatten
 	batch_size = tf.shape(img)[0]
 	scope = network_name + '_Deconv'
 
-	xavier_init = tf.contrib.layers.xavier_initializer(seed=seed+11)
-	dconv1_weights = tf.Variable(xavier_init([3,3,128,conv4_shape_3]), name='DCNN_1_Weights')
-	dconv1_bias = tf.Variable(tf.constant(0.01, shape=[128]), name='DCNN_1_Bias')
-	dconv1 = afn(tf.nn.conv2d_transpose(img,filter=dconv1_weights,output_shape=[batch_size,conv3_shape_1,conv3_shape_2,conv3_shape_3],
-									strides=[1,1,1,1],padding='VALID',name='dcnn1')+dconv1_bias)
+	#xavier_init = tf.contrib.layers.xavier_initializer(seed=seed+11)
+	#dconv1_weights = tf.Variable(xavier_init([3,3,128,conv4_shape_3]), name='DCNN_1_Weights')
+	#dconv1_bias = tf.Variable(tf.constant(0.01, shape=[128]), name='DCNN_1_Bias')
+	#dconv1 = afn(tf.nn.conv2d_transpose(img,filter=dconv1_weights,output_shape=[batch_size,conv3_shape_1,conv3_shape_2,conv3_shape_3],
+	#								strides=[1,1,1,1],padding='VALID',name='dcnn1')+dconv1_bias)
 	
-	xavier_init = tf.contrib.layers.xavier_initializer(seed=seed+12)
-	dconv2_weights = tf.Variable(xavier_init([5,5,64,128]), name='DCNN_2_Weights')
-	dconv2_bias = tf.Variable(tf.constant(0.01, shape=[64]), name='DCNN_2_Bias')
-	dconv2 = afn(tf.nn.conv2d_transpose(dconv1,filter=dconv2_weights,output_shape=[batch_size,conv2_shape_1,conv2_shape_2,conv2_shape_3],
-									strides=[1,2,2,1],padding='VALID',name='dcnn2')+dconv2_bias)
+	#xavier_init = tf.contrib.layers.xavier_initializer(seed=seed+12)
+	#dconv2_weights = tf.Variable(xavier_init([5,5,64,128]), name='DCNN_2_Weights')
+	#dconv2_bias = tf.Variable(tf.constant(0.01, shape=[64]), name='DCNN_2_Bias')
+	#dconv2 = afn(tf.nn.conv2d_transpose(dconv1,filter=dconv2_weights,output_shape=[batch_size,conv2_shape_1,conv2_shape_2,conv2_shape_3],
+	#								strides=[1,2,2,1],padding='VALID',name='dcnn2')+dconv2_bias)
 
 	xavier_init = tf.contrib.layers.xavier_initializer(seed=seed+13)
-	dconv3_weights = tf.Variable(xavier_init([6,5,64,64]), name='DCNN_3_Weights')
-	dconv3_bias = tf.Variable(tf.constant(0.01, shape=[64]), name='DCNN_3_Bias')
+	dconv3_weights = tf.Variable(xavier_init([6,5,32,conv2_shape_3]), name='DCNN_3_Weights')
+	dconv3_bias = tf.Variable(tf.constant(0.01, shape=[32]), name='DCNN_3_Bias')
 	dconv3 = afn(tf.nn.conv2d_transpose(dconv2,filter=dconv3_weights,output_shape=[batch_size,conv1_shape_1,conv1_shape_2,conv1_shape_3],
 									strides=[1,3,3,1],padding='VALID',name='dcnn3')+dconv3_bias)
 	
