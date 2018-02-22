@@ -26,18 +26,18 @@ import threading
 use_intrinsic_reward = False
 use_complete_random_agent = False
 historical_sample_size = 100
-
+propogate_rewards = True
 
 gym_environment_name = 'Breakout-v0'
 
 # ### Training the network
 # Setting all the training parameters
 batch_size = 50  # How many experiences to use for each training step.
-gamma_discount_factor = .9999  # Discount factor on the target Q-values
+gamma_discount_factor = .9  # Discount factor on the target Q-values
 startE = 0.5  # Starting chance of random action
 endE = 0.05  # Final chance of random action
 #annealing_steps = 7000  # How many steps of training to reduce startE to endE.
-annealing_eps = 900
+annealing_eps = 500
 batch_size_deconv_compressor = 4
 
 intrinsic_reward_rescaling_factor = 10
@@ -50,7 +50,7 @@ load_model_filename = "./curiosity_model/intinsic_model/model-1000.ckpt"
 # path_Frame_Predictor = "./curiosity_model/frame_predictor_model"  # The path to save our model to.
 model_saving_freq = 1000
 # h_size = 512  # The size of the final convolutional layer before splitting it into Advantage and Value streams.
-tau = 0.001  # Rate to update target network toward primary network
+tau = 0.3  # Rate to update target network toward primary network
 num_stacked_frames = 4
 previous_frames = []
 
@@ -348,6 +348,12 @@ for episode in range(num_episodes):
     if e > endE:
         # NOTE::: We are reducing the epsilon of exploration after every action we take, not after every episode, so the epsilon decreases within 1 episode
         e -= stepDrop
+    
+    if propogate_rewards:
+        for i in range(len(episodeBuffer.buffer)-2,0,-1):
+            episodeBuffer.buffer[i][2] += gamma_discount_factor*episodeBuffer.buffer[i+1][2]
+
+
     print('Episode {0} with total reward {1} in {2} steps'.format(episode, episode_reward,steps))
     if use_intrinsic_reward and not myBuffer.is_empty():
         Compressor_n_batches = len(episodeBuffer.buffer)//batch_size_deconv_compressor
@@ -406,7 +412,7 @@ for episode in range(num_episodes):
     # Periodically save the model.
     if(episode % model_saving_freq == 0 and episode>0):
         saver.save(sess, path_Complete_Network + '/model-' + str(episode) + '.ckpt')
-        print("\tSaved Model after episode : "+str(episode))
+        print("\t:::Saved Model after episode {0} :::".format(episode))
         
 
 DONE = True
