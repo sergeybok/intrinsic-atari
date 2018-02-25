@@ -26,18 +26,18 @@ import threading
 use_intrinsic_reward = False
 use_complete_random_agent = False
 historical_sample_size = 100
-propogate_rewards = True
+propogate_rewards = False
 
 gym_environment_name = 'Breakout-v0'
 
 # ### Training the network
 # Setting all the training parameters
 batch_size = 50  # How many experiences to use for each training step.
-gamma_discount_factor = .9  # Discount factor on the target Q-values
+gamma_discount_factor = .8  # Discount factor on the target Q-values
 startE = 0.5  # Starting chance of random action
 endE = 0.05  # Final chance of random action
 #annealing_steps = 7000  # How many steps of training to reduce startE to endE.
-annealing_eps = 500
+annealing_eps = 100
 batch_size_deconv_compressor = 4
 
 intrinsic_reward_rescaling_factor = 10
@@ -48,7 +48,7 @@ load_model = True  # Whether to load a saved model.
 path_Complete_Network = "./curiosity_model/intinsic_model"  # The path to save our model to.
 load_model_filename = "./curiosity_model/intinsic_model/model-1000.ckpt"
 # path_Frame_Predictor = "./curiosity_model/frame_predictor_model"  # The path to save our model to.
-model_saving_freq = 1000
+model_saving_freq = 500
 # h_size = 512  # The size of the final convolutional layer before splitting it into Advantage and Value streams.
 tau = 0.3  # Rate to update target network toward primary network
 num_stacked_frames = 4
@@ -101,7 +101,10 @@ def train_network():
             # NOTE ::: Done if the is_terminal_flag is true i.e 1, we define the end_multiplier as 0, if the is_terminal_flag is false i.e 0, we define the end_multiplier as 1
             end_multiplier = -(trainBatch[:, 4] - 1)
             doubleQ = Q2[range(actual_sampled_size), Q1]
-            targetQ = trainBatch[:, 2] + (gamma_discount_factor * doubleQ * end_multiplier)
+            if propogate_rewards:
+                targetQ = trainBatch[:,2]
+            else:
+                targetQ = trainBatch[:, 2] + (gamma_discount_factor * doubleQ * end_multiplier)
             # Update the network with our target values.
             # NOTE ::: it is important to recalculate the Q values of the states in the experience replay and then get the gradient w.r.t difference b/w recalculated values and targets
             # NOTE ::: otherwise it defeats the purpose of experience replay, also we are not storing the Q values for this reason
